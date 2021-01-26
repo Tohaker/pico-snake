@@ -1,0 +1,18 @@
+{
+    "configurations": [
+        {
+            "name": "Raspberry Pi",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/pi/pico/pico-sdk/**",
+                "/home/pi/pico/pimoroni-pico/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++14",
+            "intelliSenseMode": "gcc-arm"
+        }
+    ],
+    "version": 4
+}

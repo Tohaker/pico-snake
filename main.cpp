@@ -1,12 +1,33 @@
 #include <string>
+#include <vector>
 #include <stdlib.h>
 
 #include "pico_explorer.hpp"
+#include "hardware/pwm.h"
+#include "pico/multicore.h"
 
 using namespace pimoroni;
 
 uint16_t buffer[PicoExplorer::WIDTH * PicoExplorer::HEIGHT];
 PicoExplorer pico_explorer(buffer);
+
+Point screenPositionFromGrid_corner(Point &gridIndex, int &blockSize)
+{
+    int length = PicoExplorer::WIDTH / blockSize;
+    float x = (float)gridIndex.x / (float)length * PicoExplorer::WIDTH;
+    float y = (float)gridIndex.y / (float)length * PicoExplorer::HEIGHT;
+
+    return Point((int)x, (int)y);
+}
+
+Point screenPositionFromGrid_centre(Point &gridIndex, int &blockSize)
+{
+    Point corner = screenPositionFromGrid_corner(gridIndex, blockSize);
+    float x = corner.x + blockSize / 2;
+    float y = corner.y + blockSize / 2;
+
+    return Point((int)x, (int)y);
+}
 
 /**
  * Draw an apple at the given coordinates.
@@ -19,10 +40,11 @@ PicoExplorer pico_explorer(buffer);
  * RRRRRRRRRR
  * RRRRRRRRRR
  */
-void createApple(Point &p)
+void createApple(Point &p, int &blockSize)
 {
-    int x = p.x;
-    int y = p.y;
+    Point pos = screenPositionFromGrid_centre(p, blockSize);
+    int x = pos.x;
+    int y = pos.y;
 
     // Apple core
     pico_explorer.set_pen(214, 58, 47);
@@ -40,11 +62,28 @@ void createApple(Point &p)
     pico_explorer.rectangle(leaf);
 }
 
-Point createRandomPoint()
+std::vector<std::vector<int>> initGrid(int &blockSize)
 {
-    int x = rand() % (PicoExplorer::WIDTH - 9) + 10;
-    int y = rand() % (PicoExplorer::HEIGHT - 9) + 10;
+    int length = PicoExplorer::WIDTH / blockSize;
+    return std::vector<std::vector<int>>(
+        length,
+        std::vector<int>(length));
+}
+
+Point createRandomGridPoint()
+{
+    int x = rand() % 23;
+    int y = rand() % 23;
     return Point(x, y);
+}
+
+void playPointSound()
+{
+    pico_explorer.set_tone(440, 0.5);
+    sleep_ms(100);
+    pico_explorer.set_tone(840, 0.5);
+    sleep_ms(100);
+    pico_explorer.set_tone(0, 0);
 }
 
 int main()
@@ -53,14 +92,14 @@ int main()
     pico_explorer.set_backlight(100);
     pico_explorer.set_audio_pin(pico_explorer.GP0);
 
-    int x = 0;
-    int y = 0;
+    int blockSize = 10;
 
-    bool appleEaten = false;
-    Point apple = createRandomPoint();
+    Point gridPos(0, 0);
+    Point snake = screenPositionFromGrid_corner(gridPos, blockSize);
+    Point apple = createRandomGridPoint();
 
-    int step = 5;
     int score = 0;
+    bool appleEaten = false;
 
     while (true)
     {
@@ -76,57 +115,56 @@ int main()
         pico_explorer.text(std::to_string(score), Point(PicoExplorer::WIDTH - 30, 5), false);
 
         // Set segment location
-        Rect segment(x, y, 10, 10);
+        snake = screenPositionFromGrid_corner(gridPos, blockSize);
+        Rect segment(snake.x, snake.y, blockSize, blockSize);
         pico_explorer.set_pen(255, 255, 255);
         pico_explorer.rectangle(segment);
 
         // Decide apple location
         if (appleEaten)
         {
-            apple = createRandomPoint();
+            apple = createRandomGridPoint();
             appleEaten = false;
         }
-        createApple(apple);
+        createApple(apple, blockSize);
 
         if (pico_explorer.is_pressed(pico_explorer.A))
         {
-            if (x == 0)
-                x = PicoExplorer::WIDTH;
+            if (gridPos.x == 0)
+                gridPos.x = (int)((float)PicoExplorer::WIDTH / (float)blockSize) - 1;
             else
-                x -= step;
+                gridPos.x -= 1;
         }
 
         if (pico_explorer.is_pressed(pico_explorer.B))
         {
-            if (y == PicoExplorer::HEIGHT)
-                y = 0;
+            if ((float)gridPos.y == (float)PicoExplorer::HEIGHT / (float)blockSize)
+                gridPos.y = 0;
             else
-                y += step;
+                gridPos.y += 1;
         }
 
         if (pico_explorer.is_pressed(pico_explorer.X))
         {
-            if (x == PicoExplorer::WIDTH)
-                x = 0;
+            if ((float)gridPos.x == (float)PicoExplorer::WIDTH / (float)blockSize)
+                gridPos.x = 0;
             else
-                x += step;
+                gridPos.x += 1;
         }
 
         if (pico_explorer.is_pressed(pico_explorer.Y))
         {
-            if (y == 0)
-                y = PicoExplorer::HEIGHT;
+            if (gridPos.y == 0)
+                gridPos.y = (int)((float)PicoExplorer::HEIGHT / (float)blockSize) - 1;
             else
-                y -= step;
+                gridPos.y -= 1;
         }
 
-        if ((x + 10 >= apple.x) && (x <= apple.x) && (y + 10 >= apple.y) && (y <= apple.y))
+        if ((apple.x == gridPos.x) && (apple.y == gridPos.y))
         {
-            pico_explorer.set_tone(440, 0.5);
-            sleep_ms(100);
+            playPointSound();
             appleEaten = true;
             score += 1;
-            pico_explorer.set_tone(0, 0);
         }
 
         pico_explorer.update();

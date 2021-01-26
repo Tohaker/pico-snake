@@ -11,6 +11,7 @@ add_executable(snake
 
 target_link_libraries(snake 
     pico_stdlib 
+    pico_multicore
     pico_explorer
 )
 
