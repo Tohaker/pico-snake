@@ -7,6 +7,7 @@ pico_sdk_init()
 
 add_executable(snake
     main.cpp
+    snake.cpp
 )
 
 target_link_libraries(snake 

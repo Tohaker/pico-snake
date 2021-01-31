@@ -3,28 +3,27 @@
 #include <stdlib.h>
 
 #include "pico_explorer.hpp"
-#include "hardware/pwm.h"
-#include "pico/multicore.h"
+#include "snake.h"
 
 using namespace pimoroni;
 
 uint16_t buffer[PicoExplorer::WIDTH * PicoExplorer::HEIGHT];
 PicoExplorer pico_explorer(buffer);
 
-Point screenPositionFromGrid_corner(Point &gridIndex, int &blockSize)
+Point screen_position_from_grid__corner(Point gridIndex, int &block_size)
 {
-    int length = PicoExplorer::WIDTH / blockSize;
+    int length = PicoExplorer::WIDTH / block_size;
     float x = (float)gridIndex.x / (float)length * PicoExplorer::WIDTH;
     float y = (float)gridIndex.y / (float)length * PicoExplorer::HEIGHT;
 
     return Point((int)x, (int)y);
 }
 
-Point screenPositionFromGrid_centre(Point &gridIndex, int &blockSize)
+Point screen_position_from_grid__centre(Point gridIndex, int &block_size)
 {
-    Point corner = screenPositionFromGrid_corner(gridIndex, blockSize);
-    float x = corner.x + blockSize / 2;
-    float y = corner.y + blockSize / 2;
+    Point corner = screen_position_from_grid__corner(gridIndex, block_size);
+    float x = corner.x + block_size / 2;
+    float y = corner.y + block_size / 2;
 
     return Point((int)x, (int)y);
 }
@@ -40,9 +39,9 @@ Point screenPositionFromGrid_centre(Point &gridIndex, int &blockSize)
  * RRRRRRRRRR
  * RRRRRRRRRR
  */
-void createApple(Point &p, int &blockSize)
+void create_apple(Point &p, int &block_size)
 {
-    Point pos = screenPositionFromGrid_centre(p, blockSize);
+    Point pos = screen_position_from_grid__centre(p, block_size);
     int x = pos.x;
     int y = pos.y;
 
@@ -62,22 +61,22 @@ void createApple(Point &p, int &blockSize)
     pico_explorer.rectangle(leaf);
 }
 
-std::vector<std::vector<int>> initGrid(int &blockSize)
+std::vector<std::vector<int>> init_grid(int &block_size)
 {
-    int length = PicoExplorer::WIDTH / blockSize;
+    int length = PicoExplorer::WIDTH / block_size;
     return std::vector<std::vector<int>>(
         length,
         std::vector<int>(length));
 }
 
-Point createRandomGridPoint()
+Point create_random_grid_point()
 {
     int x = rand() % 23;
     int y = rand() % 23;
     return Point(x, y);
 }
 
-void playPointSound()
+void play_point_sound()
 {
     pico_explorer.set_tone(440, 0.5);
     sleep_ms(100);
@@ -92,17 +91,24 @@ int main()
     pico_explorer.set_backlight(100);
     pico_explorer.set_audio_pin(pico_explorer.GP0);
 
-    int blockSize = 10;
+    int block_size = 10;
+    int screen_end = (int)((float)PicoExplorer::WIDTH / (float)block_size);
+    int screen_bottom = (int)((float)PicoExplorer::HEIGHT / (float)block_size);
 
-    Point gridPos(0, 0);
-    Point snake = screenPositionFromGrid_corner(gridPos, blockSize);
-    Point apple = createRandomGridPoint();
+    int middle_of_screen = (int)(((float)PicoExplorer::WIDTH / (float)block_size) / 2.);
+    Point head_pos(middle_of_screen, middle_of_screen);
+    Direction head_dir = Direction::DOWN;
+    Snake head(head_pos, head_dir);
+
+    std::vector<Snake> full_snake = {head};
+    Point apple = create_random_grid_point();
 
     int score = 0;
-    bool appleEaten = false;
+    bool apple_eaten = false;
 
     while (true)
     {
+        sleep_ms(500);
         pico_explorer.clear();
 
         // Set background colour
@@ -114,56 +120,117 @@ int main()
         pico_explorer.set_pen(255, 255, 255);
         pico_explorer.text(std::to_string(score), Point(PicoExplorer::WIDTH - 30, 5), false);
 
-        // Set segment location
-        snake = screenPositionFromGrid_corner(gridPos, blockSize);
-        Rect segment(snake.x, snake.y, blockSize, blockSize);
-        pico_explorer.set_pen(255, 255, 255);
-        pico_explorer.rectangle(segment);
+        // Set segments location
+        std::vector<Snake>::iterator it;
+        for (it = full_snake.begin(); it != full_snake.end(); it++)
+        {
+            Point snake = screen_position_from_grid__corner(it->get_grid_position(), block_size);
+            Rect segment(snake.x, snake.y, block_size, block_size);
+            pico_explorer.set_pen(255, 255, 255);
+            pico_explorer.rectangle(segment);
+        }
 
         // Decide apple location
-        if (appleEaten)
+        if (apple_eaten)
         {
-            apple = createRandomGridPoint();
-            appleEaten = false;
+            apple = create_random_grid_point();
+            apple_eaten = false;
         }
-        createApple(apple, blockSize);
+        create_apple(apple, block_size);
+
+        Point prev = full_snake.at(0).get_grid_position();
+        Direction dir = full_snake.at(0).get_direction();
+        bool has_turned = false;
 
         if (pico_explorer.is_pressed(pico_explorer.A))
         {
-            if (gridPos.x == 0)
-                gridPos.x = (int)((float)PicoExplorer::WIDTH / (float)blockSize) - 1;
-            else
-                gridPos.x -= 1;
+            if ((dir != Direction::RIGHT) && (dir != Direction::LEFT))
+            {
+                has_turned = true;
+                full_snake.at(0).set_direction(Direction::LEFT);
+                if (prev.x == screen_end)
+                    full_snake.at(0).set_grid_position(Point(0, prev.y));
+                else
+                    full_snake.at(0).set_grid_position(Point(prev.x - 1, prev.y));
+            }
         }
 
         if (pico_explorer.is_pressed(pico_explorer.B))
         {
-            if ((float)gridPos.y == (float)PicoExplorer::HEIGHT / (float)blockSize)
-                gridPos.y = 0;
-            else
-                gridPos.y += 1;
+            if ((dir != Direction::UP) && (dir != Direction::DOWN))
+            {
+                has_turned = true;
+                full_snake.at(0).set_direction(Direction::DOWN);
+                if (prev.y == screen_bottom)
+                    full_snake.at(0).set_grid_position(Point(prev.x, 0));
+                else
+                    full_snake.at(0).set_grid_position(Point(prev.x, prev.y + 1));
+            }
         }
 
         if (pico_explorer.is_pressed(pico_explorer.X))
         {
-            if ((float)gridPos.x == (float)PicoExplorer::WIDTH / (float)blockSize)
-                gridPos.x = 0;
-            else
-                gridPos.x += 1;
+            if ((dir != Direction::RIGHT) && (dir != Direction::LEFT))
+            {
+                has_turned = true;
+                full_snake.at(0).set_direction(Direction::RIGHT);
+                if (prev.x == 0)
+                    full_snake.at(0).set_grid_position(Point(screen_end - 1, prev.y));
+                else
+                    full_snake.at(0).set_grid_position(Point(prev.x + 1, prev.y));
+            }
         }
 
         if (pico_explorer.is_pressed(pico_explorer.Y))
         {
-            if (gridPos.y == 0)
-                gridPos.y = (int)((float)PicoExplorer::HEIGHT / (float)blockSize) - 1;
-            else
-                gridPos.y -= 1;
+            if ((dir != Direction::UP) && (dir != Direction::DOWN))
+            {
+                has_turned = true;
+                full_snake.at(0).set_direction(Direction::UP);
+                if (prev.y == 0)
+                    full_snake.at(0).set_grid_position(Point(prev.x, screen_bottom - 1));
+                else
+                    full_snake.at(0).set_grid_position(Point(prev.x, prev.y - 1));
+            }
         }
 
-        if ((apple.x == gridPos.x) && (apple.y == gridPos.y))
+        if (!has_turned)
         {
-            playPointSound();
-            appleEaten = true;
+            switch (dir)
+            {
+            case Direction::UP:
+                if (prev.y == 0)
+                    full_snake.at(0).set_grid_position(Point(prev.x, screen_bottom - 1));
+                else
+                    full_snake.at(0).set_grid_position(Point(prev.x, prev.y - 1));
+                break;
+            case Direction::DOWN:
+                if (prev.y == screen_bottom)
+                    full_snake.at(0).set_grid_position(Point(prev.x, 0));
+                else
+                    full_snake.at(0).set_grid_position(Point(prev.x, prev.y + 1));
+                break;
+            case Direction::LEFT:
+                if (prev.x == 0)
+                    full_snake.at(0).set_grid_position(Point(screen_end - 1, prev.y));
+                else
+                    full_snake.at(0).set_grid_position(Point(prev.x - 1, prev.y));
+                break;
+            case Direction::RIGHT:
+                if (prev.x == screen_end)
+                    full_snake.at(0).set_grid_position(Point(0, prev.y));
+                else
+                    full_snake.at(0).set_grid_position(Point(prev.x + 1, prev.y));
+                break;
+            default:
+                break;
+            }
+        }
+
+        if ((apple.x == head_pos.x) && (apple.y == head_pos.y))
+        {
+            play_point_sound();
+            apple_eaten = true;
             score += 1;
         }
 
