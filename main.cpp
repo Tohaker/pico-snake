@@ -2,6 +2,8 @@
 #include <vector>
 #include <stdlib.h>
 
+#include "pico/stdlib.h"
+#include "hardware/gpio.h"
 #include "pico_explorer.hpp"
 #include "snake.h"
 
@@ -9,6 +11,18 @@ using namespace pimoroni;
 
 uint16_t buffer[PicoExplorer::WIDTH * PicoExplorer::HEIGHT];
 PicoExplorer pico_explorer(buffer);
+
+int block_size = 10;
+bool has_turned = false;
+
+int middle_of_screen = (int)(((float)PicoExplorer::WIDTH / (float)block_size) / 2.);
+Point head_pos(middle_of_screen, middle_of_screen);
+Direction head_dir = Direction::DOWN;
+Snake head(head_pos, head_dir);
+std::vector<Snake> full_snake = {head};
+
+int screen_end = (int)((float)PicoExplorer::WIDTH / (float)block_size);
+int screen_bottom = (int)((float)PicoExplorer::HEIGHT / (float)block_size);
 
 Point screen_position_from_grid__corner(Point gridIndex, int &block_size)
 {
@@ -85,22 +99,71 @@ void play_point_sound()
     pico_explorer.set_tone(0, 0);
 }
 
+void irq_callback(uint gpio, uint32_t events)
+{
+    Point prev = full_snake.at(0).get_grid_position();
+    Direction dir = full_snake.at(0).get_direction();
+
+    has_turned = true;
+    // A button
+    switch (gpio)
+    {
+    case 12: // A
+        if ((dir != Direction::RIGHT) && (dir != Direction::LEFT))
+        {
+            full_snake.at(0).set_direction(Direction::LEFT);
+            if (prev.x == screen_end)
+                full_snake.at(0).set_grid_position(Point(0, prev.y));
+            else
+                full_snake.at(0).set_grid_position(Point(prev.x - 1, prev.y));
+        }
+        break;
+    case 13: // B
+        if ((dir != Direction::UP) && (dir != Direction::DOWN))
+        {
+            full_snake.at(0).set_direction(Direction::DOWN);
+            if (prev.y == screen_bottom)
+                full_snake.at(0).set_grid_position(Point(prev.x, 0));
+            else
+                full_snake.at(0).set_grid_position(Point(prev.x, prev.y + 1));
+        }
+        break;
+    case 14: // X
+        if ((dir != Direction::RIGHT) && (dir != Direction::LEFT))
+        {
+            full_snake.at(0).set_direction(Direction::RIGHT);
+            if (prev.x == 0)
+                full_snake.at(0).set_grid_position(Point(screen_end - 1, prev.y));
+            else
+                full_snake.at(0).set_grid_position(Point(prev.x + 1, prev.y));
+        }
+        break;
+    case 15: // Y
+        if ((dir != Direction::UP) && (dir != Direction::DOWN))
+        {
+            full_snake.at(0).set_direction(Direction::UP);
+            if (prev.y == 0)
+                full_snake.at(0).set_grid_position(Point(prev.x, screen_bottom - 1));
+            else
+                full_snake.at(0).set_grid_position(Point(prev.x, prev.y - 1));
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 int main()
 {
+    gpio_set_irq_enabled_with_callback(12, GPIO_IRQ_EDGE_FALL, true, &irq_callback);
+    gpio_set_irq_enabled_with_callback(13, GPIO_IRQ_EDGE_FALL, true, &irq_callback);
+    gpio_set_irq_enabled_with_callback(14, GPIO_IRQ_EDGE_FALL, true, &irq_callback);
+    gpio_set_irq_enabled_with_callback(15, GPIO_IRQ_EDGE_FALL, true, &irq_callback);
+
     pico_explorer.init();
     pico_explorer.set_backlight(100);
     pico_explorer.set_audio_pin(pico_explorer.GP0);
 
-    int block_size = 10;
-    int screen_end = (int)((float)PicoExplorer::WIDTH / (float)block_size);
-    int screen_bottom = (int)((float)PicoExplorer::HEIGHT / (float)block_size);
-
-    int middle_of_screen = (int)(((float)PicoExplorer::WIDTH / (float)block_size) / 2.);
-    Point head_pos(middle_of_screen, middle_of_screen);
-    Direction head_dir = Direction::DOWN;
-    Snake head(head_pos, head_dir);
-
-    std::vector<Snake> full_snake = {head};
     Point apple = create_random_grid_point();
 
     int score = 0;
@@ -140,59 +203,6 @@ int main()
 
         Point prev = full_snake.at(0).get_grid_position();
         Direction dir = full_snake.at(0).get_direction();
-        bool has_turned = false;
-
-        if (pico_explorer.is_pressed(pico_explorer.A))
-        {
-            if ((dir != Direction::RIGHT) && (dir != Direction::LEFT))
-            {
-                has_turned = true;
-                full_snake.at(0).set_direction(Direction::LEFT);
-                if (prev.x == screen_end)
-                    full_snake.at(0).set_grid_position(Point(0, prev.y));
-                else
-                    full_snake.at(0).set_grid_position(Point(prev.x - 1, prev.y));
-            }
-        }
-
-        if (pico_explorer.is_pressed(pico_explorer.B))
-        {
-            if ((dir != Direction::UP) && (dir != Direction::DOWN))
-            {
-                has_turned = true;
-                full_snake.at(0).set_direction(Direction::DOWN);
-                if (prev.y == screen_bottom)
-                    full_snake.at(0).set_grid_position(Point(prev.x, 0));
-                else
-                    full_snake.at(0).set_grid_position(Point(prev.x, prev.y + 1));
-            }
-        }
-
-        if (pico_explorer.is_pressed(pico_explorer.X))
-        {
-            if ((dir != Direction::RIGHT) && (dir != Direction::LEFT))
-            {
-                has_turned = true;
-                full_snake.at(0).set_direction(Direction::RIGHT);
-                if (prev.x == 0)
-                    full_snake.at(0).set_grid_position(Point(screen_end - 1, prev.y));
-                else
-                    full_snake.at(0).set_grid_position(Point(prev.x + 1, prev.y));
-            }
-        }
-
-        if (pico_explorer.is_pressed(pico_explorer.Y))
-        {
-            if ((dir != Direction::UP) && (dir != Direction::DOWN))
-            {
-                has_turned = true;
-                full_snake.at(0).set_direction(Direction::UP);
-                if (prev.y == 0)
-                    full_snake.at(0).set_grid_position(Point(prev.x, screen_bottom - 1));
-                else
-                    full_snake.at(0).set_grid_position(Point(prev.x, prev.y - 1));
-            }
-        }
 
         if (!has_turned)
         {
@@ -227,6 +237,9 @@ int main()
             }
         }
 
+        has_turned = false;
+
+        head_pos = full_snake.at(0).get_grid_position();
         if ((apple.x == head_pos.x) && (apple.y == head_pos.y))
         {
             play_point_sound();
