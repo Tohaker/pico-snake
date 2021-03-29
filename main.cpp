@@ -161,7 +161,6 @@ int main()
     gpio_set_irq_enabled_with_callback(15, GPIO_IRQ_EDGE_FALL, true, &irq_callback);
 
     pico_explorer.init();
-    pico_explorer.set_backlight(100);
     pico_explorer.set_audio_pin(pico_explorer.GP0);
 
     Point apple = create_random_grid_point();
